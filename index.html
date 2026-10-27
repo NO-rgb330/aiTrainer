@@ -19,7 +19,10 @@
             --muted-color: #888888;
         }
         * { box-sizing: border-box; font-family: 'VT323', monospace; user-select: none; }
-        body { background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; display: flex; justify-content: center; min-height: 100vh; }
+        
+        /* Add padding to bottom so the sidebar doesn't cover content */
+        body { background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; padding-bottom: 80px; display: flex; justify-content: center; min-height: 100vh; }
+        
         .container { width: 100%; max-width: 1000px; display: flex; flex-direction: column; gap: 15px; }
         .tabs { display: flex; gap: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
         .tab-btn { background: transparent; color: var(--muted-color); border: 1px solid transparent; font-size: 20px; cursor: pointer; padding: 5px 15px; }
@@ -32,6 +35,7 @@
         @keyframes blink { 50% { opacity: 0; } }
         .btn { background: transparent; color: var(--text-color); border: 1px solid var(--text-color); font-size: 20px; padding: 5px 15px; cursor: pointer; transition: all 0.2s; }
         .btn:hover { background: var(--text-color); color: var(--bg-color); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .dashboard { display: flex; gap: 15px; }
         .panel { flex: 1; border: 1px solid var(--border-color); padding: 15px; display: flex; flex-direction: column; min-width: 0; }
         .panel h2 { margin: 0 0 15px 0; font-size: 20px; font-weight: normal; color: var(--muted-color); text-align: center; }
@@ -49,8 +53,48 @@
         .teach-area { display: flex; flex-direction: column; gap: 15px; border: 1px solid var(--border-color); padding: 20px; }
         textarea { width: 100%; height: 150px; resize: vertical; font-size: 18px; }
         .export-area { display: flex; flex-direction: column; gap: 20px; border: 1px solid var(--border-color); padding: 20px; align-items: center; }
-        #status { position: absolute; bottom: 10px; left: 10px; font-size: 16px; color: var(--muted-color); }
-        #progress { font-size: 18px; color: var(--muted-color); }
+        
+        /* Bottom Sidebar */
+        #bottom-sidebar {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            background: var(--bg-color);
+            border-top: 1px solid var(--border-color);
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            z-index: 100;
+        }
+        .progress-wrapper {
+            flex-grow: 1;
+            height: 24px;
+            border: 1px solid var(--border-color);
+            position: relative;
+            background: #111;
+        }
+        #progress-bar {
+            height: 100%;
+            background: var(--text-color);
+            width: 0%;
+            transition: width 0.2s ease;
+        }
+        #progress-text {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: var(--text-color);
+            mix-blend-mode: difference;
+        }
+        #status-text {
+            font-size: 20px;
+            color: var(--text-color);
+            min-width: 250px;
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
@@ -80,10 +124,11 @@
                     <div style="text-align:center; font-size: 18px; line-height: 1.6; color: var(--muted-color);">
                         <p>Embedding (32D) -> LSTM (128 Units) -> Dense (Softmax)</p>
                         <p>Sequence Length: 40 characters</p>
+                        <p>Dataset Size: <span id="dataset-size">-</span> chars</p>
                     </div>
                 </div>
                 <div class="panel">
-                    <h2>TRAINING PROGRESS</h2>
+                    <h2>TRAINING LOSS</h2>
                     <canvas id="loss-canvas"></canvas>
                 </div>
             </div>
@@ -94,12 +139,12 @@
                     <span id="context-val" class="info-value">-</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label">STATUS</span>
-                    <span id="train-status" class="info-value">Idle</span>
+                    <span class="info-label">CURRENT LOSS</span>
+                    <span id="loss-val" class="info-value">-</span>
                 </div>
                 <div class="info-item">
-                    <span class="info-label">LOSS</span>
-                    <span id="loss-val" class="info-value">-</span>
+                    <span class="info-label">EPOCH</span>
+                    <span id="epoch-val" class="info-value">0/10</span>
                 </div>
             </div>
 
@@ -118,8 +163,7 @@
                 </div>
             </div>
             <div style="text-align: center; margin-top: 10px;">
-                <button id="train-btn" class="btn" style="font-size: 24px; padding: 10px 30px;">TRAIN MODEL</button>
-                <div id="progress" style="margin-top: 10px;"></div>
+                <button id="train-btn" class="btn" style="font-size: 24px; padding: 10px 30px;" disabled>INITIALIZING...</button>
             </div>
         </div>
 
@@ -129,7 +173,7 @@
                 <h2 style="margin:0; font-weight:normal; color:var(--muted-color);">INPUT NEW TEXT TO TRAIN THE AI</h2>
                 <p style="margin:0; font-size:16px; color:var(--muted-color);">Enter basic English words or sentences. The model will append this to its memory and update its neural network.</p>
                 <textarea id="teach-input" placeholder="e.g., the quick brown fox jumps over the lazy dog..."></textarea>
-                <button class="btn" onclick="teachAI()" style="align-self: flex-start;">CONTINUE TRAINING</button>
+                <button class="btn" onclick="teachAI()" style="align-self: flex-start;" id="teach-btn" disabled>CONTINUE TRAINING</button>
             </div>
         </div>
 
@@ -139,7 +183,7 @@
                 <h2 style="margin:0; font-weight:normal; color:var(--muted-color);">SAVE OR LOAD AI MEMORY</h2>
                 <p style="margin:0; font-size:16px; color:var(--muted-color); text-align:center;">Export the trained LSTM weights and vocabulary as a JSON file.</p>
                 <div style="display:flex; gap:20px; margin-top: 10px;">
-                    <button class="btn" onclick="exportModel()">EXPORT MODEL</button>
+                    <button class="btn" onclick="exportModel()" id="export-btn" disabled>EXPORT MODEL</button>
                     <label class="btn" style="cursor:pointer;">
                         IMPORT MODEL
                         <input type="file" id="import-file" accept=".json" style="display:none;" onchange="importModel(event)">
@@ -149,7 +193,14 @@
         </div>
     </div>
 
-    <div id="status">Initializing backend...</div>
+    <!-- Bottom Sidebar for Progress -->
+    <div id="bottom-sidebar">
+        <div id="status-text">Initializing...</div>
+        <div class="progress-wrapper">
+            <div id="progress-bar"></div>
+            <div id="progress-text">0%</div>
+        </div>
+    </div>
 
     <script>
         // --- Configuration ---
@@ -157,6 +208,7 @@
         const EMBED_DIM = 32;
         const LSTM_UNITS = 128;
         const BATCH_SIZE = 64;
+        const EPOCHS = 5; // Reduced to 5 for faster initial load
 
         // --- Global State ---
         let corpus = "";
@@ -169,23 +221,36 @@
         let currentStream = "";
         let lastChar = "";
         let lossHistory = [];
+        let isGenerating = false;
 
         // Canvas
         const lossCanvas = document.getElementById('loss-canvas');
         const lossCtx = lossCanvas.getContext('2d');
 
         // UI Elements
-        const statusEl = document.getElementById('status');
         const streamEl = document.getElementById('stream-text');
         const contextEl = document.getElementById('context-val');
-        const trainStatusEl = document.getElementById('train-status');
         const lossValEl = document.getElementById('loss-val');
-        const progressEl = document.getElementById('progress');
+        const epochValEl = document.getElementById('epoch-val');
+        const datasetSizeEl = document.getElementById('dataset-size');
         const pauseBtn = document.getElementById('pause-btn');
         const tempSlider = document.getElementById('temp-slider');
         const tempValEl = document.getElementById('temp-val');
         const corpusSelect = document.getElementById('corpus-select');
         const trainBtn = document.getElementById('train-btn');
+        const teachBtn = document.getElementById('teach-btn');
+        const exportBtn = document.getElementById('export-btn');
+
+        // Sidebar Elements
+        const statusTextEl = document.getElementById('status-text');
+        const progressBarEl = document.getElementById('progress-bar');
+        const progressTextEl = document.getElementById('progress-text');
+
+        function updateProgress(percent, text) {
+            progressBarEl.style.width = `${percent}%`;
+            progressTextEl.innerText = `${Math.round(percent)}%`;
+            if (text) statusTextEl.innerText = text;
+        }
 
         // --- Tab Switching ---
         function switchTab(tabId, btn) {
@@ -196,20 +261,70 @@
             if (tabId === 'dashboard') setTimeout(drawLossChart, 50);
         }
 
-        // --- Data Loading ---
+        // --- Data Loading with Progress ---
         async function loadDataset(name) {
-            statusEl.innerText = `Loading ${name}...`;
+            updateProgress(0, `Fetching ${name} dataset...`);
+            corpusSelect.disabled = true;
+            trainBtn.disabled = true;
+            
+            let url = "";
             if (name === 'shakespeare') {
-                const response = await fetch('https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt');
-                corpus = await response.text();
+                url = 'https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt';
             } else if (name === 'nietzsche') {
-                // Fallback text for Nietzsche if the fetch fails (small sample)
-                corpus = "He who has a why to live can bear almost any how. And those who were seen dancing were thought to be insane by those who could not hear the music. That which does not kill us makes us stronger.";
+                // Use a raw GitHub file for Nietzsche text
+                url = 'https://raw.githubusercontent.com/01walid/nietzsche-corpus/master/nietzsche.txt';
             }
-            // Limit corpus size for browser memory (e.g., first 100k chars)
-            if (corpus.length > 100000) corpus = corpus.slice(0, 100000);
-            buildVocab();
-            statusEl.innerText = `Dataset ready: ${corpus.length} chars`;
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error("Network response was not ok");
+                
+                const reader = response.body.getReader();
+                const contentLength = +response.headers.get('Content-Length') || 0;
+                
+                let receivedLength = 0;
+                let chunks = [];
+                
+                while(true) {
+                    const {done, value} = await reader.read();
+                    if (done) break;
+                    chunks.push(value);
+                    receivedLength += value.length;
+                    
+                    if (contentLength > 0) {
+                        const percent = (receivedLength / contentLength) * 100;
+                        updateProgress(percent, `Downloading ${name}...`);
+                    } else {
+                        updateProgress(50, `Downloading ${name}...`);
+                    }
+                }
+
+                // Combine chunks
+                const chunksAll = new Uint8Array(receivedLength);
+                let position = 0;
+                for(let chunk of chunks) {
+                    chunksAll.set(chunk, position);
+                    position += chunk.length;
+                }
+                corpus = new TextDecoder("utf-8").decode(chunksAll);
+
+                // Limit corpus size for browser performance
+                if (corpus.length > 50000) corpus = corpus.slice(0, 50000);
+                datasetSizeEl.innerText = corpus.length.toLocaleString();
+                
+                updateProgress(100, "Dataset loaded. Preparing...");
+                buildVocab();
+                
+                // Small delay to let UI update
+                await new Promise(r => setTimeout(r, 100));
+                trainBtn.disabled = false;
+                trainBtn.innerText = "TRAIN MODEL";
+                corpusSelect.disabled = false;
+            } catch (e) {
+                console.error(e);
+                updateProgress(0, "Failed to load dataset.");
+                alert("Failed to load dataset. Check your internet connection.");
+            }
         }
 
         function buildVocab() {
@@ -244,19 +359,24 @@
 
         // --- Training ---
         async function trainModel(additionalText = "") {
-            if (additionalText) corpus += " " + additionalText;
-            buildVocab(); // Rebuild vocab in case new chars were added
+            if (additionalText) {
+                corpus += " " + additionalText;
+                datasetSizeEl.innerText = corpus.length.toLocaleString();
+            }
+            buildVocab();
             
-            trainStatusEl.innerText = "Training...";
             trainBtn.disabled = true;
-            progressEl.innerText = "Preparing data...";
+            teachBtn.disabled = true;
+            exportBtn.disabled = true;
+            corpusSelect.disabled = true;
 
-            // Prepare sequences
+            updateProgress(0, "Preparing sequences...");
+            await new Promise(r => setTimeout(r, 50)); // Yield to UI
+
             const indices = Array.from(corpus).map(c => charToIdx[c]);
             const inputs = [];
             const labels = [];
             
-            // Sliding window
             for (let i = 0; i < indices.length - SEQ_LEN; i++) {
                 inputs.push(indices.slice(i, i + SEQ_LEN));
                 labels.push(indices[i + SEQ_LEN]);
@@ -268,38 +388,49 @@
                 return;
             }
 
+            updateProgress(10, "Creating tensors...");
+            await new Promise(r => setTimeout(r, 50));
+
             const xs = tf.tensor2d(inputs, [inputs.length, SEQ_LEN]);
             const ys = tf.oneHot(tf.tensor1d(labels, 'int32'), vocabSize);
 
-            // Create model if it doesn't exist or if vocab size changed
             if (!model || model.input.shape[1] !== SEQ_LEN || model.output.shape[1] !== vocabSize) {
                 model = createModel();
             }
 
-            // Training loop
-            const epochs = 10; // Keep low for browser demo
+            lossHistory = [];
+            
+            updateProgress(20, "Training neural network...");
+            
             await model.fit(xs, ys, {
-                epochs: epochs,
+                epochs: EPOCHS,
                 batchSize: BATCH_SIZE,
                 shuffle: true,
                 callbacks: {
                     onEpochEnd: (epoch, logs) => {
                         lossHistory.push(logs.loss);
-                        if (lossHistory.length > 50) lossHistory.shift();
                         lossValEl.innerText = logs.loss.toFixed(4);
-                        progressEl.innerText = `Epoch ${epoch + 1}/${epochs} - Loss: ${logs.loss.toFixed(4)}`;
+                        epochValEl.innerText = `${epoch + 1}/${EPOCHS}`;
+                        
+                        // Calculate progress from 20% to 100% based on epoch
+                        const trainPercent = 20 + ((epoch + 1) / EPOCHS) * 80;
+                        updateProgress(trainPercent, `Training Epoch ${epoch + 1}/${EPOCHS}...`);
                         drawLossChart();
                     }
                 }
             });
 
             xs.dispose(); ys.dispose();
-            trainStatusEl.innerText = "Ready";
-            trainBtn.disabled = false;
-            progressEl.innerText = "Training complete!";
             
-            // Start generation if not already running
-            if (!currentStream) {
+            updateProgress(100, "Training Complete!");
+            trainBtn.disabled = false;
+            teachBtn.disabled = false;
+            exportBtn.disabled = false;
+            corpusSelect.disabled = false;
+            trainBtn.innerText = "RETRAIN MODEL";
+            
+            if (!isGenerating) {
+                isGenerating = true;
                 currentStream = corpus.slice(0, SEQ_LEN);
                 lastChar = currentStream[currentStream.length - 1];
                 streamEl.innerText = currentStream;
@@ -339,7 +470,7 @@
             currentStream += nextChar;
             lastChar = nextChar;
 
-            if (currentStream.length > 100) currentStream = currentStream.slice(-100);
+            if (currentStream.length > 150) currentStream = currentStream.slice(-150);
             streamEl.innerText = currentStream;
             contextEl.innerText = `"${lastChar}"`;
 
@@ -379,34 +510,40 @@
             if (!newText) return alert("Please enter some text.");
             await trainModel(newText);
             document.getElementById('teach-input').value = '';
-            alert("Model updated with new text!");
         }
 
         // --- Export / Import ---
         async function exportModel() {
             if (!model) return alert("No model trained yet.");
+            updateProgress(100, "Downloading model...");
             await model.save('downloads://lstm-text-model');
-            alert("Model downloading...");
+            setTimeout(() => updateProgress(100, "Model saved!"), 2000);
         }
 
         async function importModel(event) {
             const file = event.target.files[0];
             if (!file) return;
-            // Note: For simplicity, this assumes you reload the page after import.
-            // A full implementation would need to load the model and vocabulary.
             alert("Model import requires a page refresh in this demo version.");
         }
 
         // --- Initialization ---
         async function start() {
-            await tf.setBackend('webgpu').catch(() => tf.setBackend('webgl'));
-            await tf.ready();
-            statusEl.innerText = `Backend: ${tf.getBackend().toUpperCase()}`;
+            updateProgress(0, "Initializing Backend...");
+            try {
+                if (navigator.gpu) {
+                    await tf.setBackend('webgpu');
+                } else {
+                    await tf.setBackend('webgl');
+                }
+                await tf.ready();
+                updateProgress(5, `Backend: ${tf.getBackend().toUpperCase()}`);
+            } catch (e) {
+                await tf.setBackend('webgl');
+                await tf.ready();
+                updateProgress(5, `Backend: WEBGL`);
+            }
 
             await loadDataset('shakespeare');
-            
-            // Auto-train on load
-            await trainModel();
         }
 
         // Event Listeners
@@ -417,7 +554,7 @@
         tempSlider.addEventListener('input', (e) => tempValEl.innerText = parseFloat(e.target.value).toFixed(2));
         corpusSelect.addEventListener('change', async (e) => {
             await loadDataset(e.target.value);
-            await trainModel();
+            // Don't auto-train on change to let user press the button
         });
         trainBtn.addEventListener('click', () => trainModel());
         window.addEventListener('resize', drawLossChart);
