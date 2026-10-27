@@ -20,7 +20,6 @@
         }
         * { box-sizing: border-box; font-family: 'VT323', monospace; user-select: none; }
         
-        /* Add padding to bottom so the sidebar doesn't cover content */
         body { background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; padding-bottom: 80px; display: flex; justify-content: center; min-height: 100vh; }
         
         .container { width: 100%; max-width: 1000px; display: flex; flex-direction: column; gap: 15px; }
@@ -34,7 +33,7 @@
         .cursor { display: inline-block; width: 12px; height: 22px; background-color: var(--text-color); margin-left: 5px; animation: blink 1s step-end infinite; }
         @keyframes blink { 50% { opacity: 0; } }
         .btn { background: transparent; color: var(--text-color); border: 1px solid var(--text-color); font-size: 20px; padding: 5px 15px; cursor: pointer; transition: all 0.2s; }
-        .btn:hover { background: var(--text-color); color: var(--bg-color); }
+        .btn:hover:not(:disabled) { background: var(--text-color); color: var(--bg-color); }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .dashboard { display: flex; gap: 15px; }
         .panel { flex: 1; border: 1px solid var(--border-color); padding: 15px; display: flex; flex-direction: column; min-width: 0; }
@@ -54,53 +53,20 @@
         textarea { width: 100%; height: 150px; resize: vertical; font-size: 18px; }
         .export-area { display: flex; flex-direction: column; gap: 20px; border: 1px solid var(--border-color); padding: 20px; align-items: center; }
         
-        /* Bottom Sidebar */
         #bottom-sidebar {
-            position: fixed;
-            bottom: 0; left: 0; right: 0;
-            background: var(--bg-color);
-            border-top: 1px solid var(--border-color);
-            padding: 15px 20px;
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            z-index: 100;
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: var(--bg-color); border-top: 1px solid var(--border-color);
+            padding: 15px 20px; display: flex; align-items: center; gap: 20px; z-index: 100;
         }
-        .progress-wrapper {
-            flex-grow: 1;
-            height: 24px;
-            border: 1px solid var(--border-color);
-            position: relative;
-            background: #111;
-        }
-        #progress-bar {
-            height: 100%;
-            background: var(--text-color);
-            width: 0%;
-            transition: width 0.2s ease;
-        }
-        #progress-text {
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-            color: var(--text-color);
-            mix-blend-mode: difference;
-        }
-        #status-text {
-            font-size: 20px;
-            color: var(--text-color);
-            min-width: 250px;
-            white-space: nowrap;
-        }
+        .progress-wrapper { flex-grow: 1; height: 24px; border: 1px solid var(--border-color); position: relative; background: #111; }
+        #progress-bar { height: 100%; background: var(--text-color); width: 0%; transition: width 0.2s ease; }
+        #progress-text { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; color: var(--text-color); mix-blend-mode: difference; }
+        #status-text { font-size: 20px; color: var(--text-color); min-width: 250px; white-space: nowrap; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <!-- Tabs -->
         <div class="tabs">
             <button class="tab-btn active" onclick="switchTab('dashboard', this)">DASHBOARD</button>
             <button class="tab-btn" onclick="switchTab('teach', this)">TEACH AI</button>
@@ -122,8 +88,8 @@
                 <div class="panel">
                     <h2>MODEL ARCHITECTURE</h2>
                     <div style="text-align:center; font-size: 18px; line-height: 1.6; color: var(--muted-color);">
-                        <p>Embedding (32D) -> LSTM (128 Units) -> Dense (Softmax)</p>
-                        <p>Sequence Length: 40 characters</p>
+                        <p>Embedding (32D) -> LSTM (64 Units) -> Dense (Softmax)</p>
+                        <p>Sequence Length: 25 characters</p>
                         <p>Dataset Size: <span id="dataset-size">-</span> chars</p>
                     </div>
                 </div>
@@ -144,7 +110,7 @@
                 </div>
                 <div class="info-item">
                     <span class="info-label">EPOCH</span>
-                    <span id="epoch-val" class="info-value">0/10</span>
+                    <span id="epoch-val" class="info-value">0/3</span>
                 </div>
             </div>
 
@@ -193,7 +159,6 @@
         </div>
     </div>
 
-    <!-- Bottom Sidebar for Progress -->
     <div id="bottom-sidebar">
         <div id="status-text">Initializing...</div>
         <div class="progress-wrapper">
@@ -203,12 +168,13 @@
     </div>
 
     <script>
-        // --- Configuration ---
-        const SEQ_LEN = 40;
+        // --- Configuration for Low RAM Devices ---
+        const SEQ_LEN = 25;       // Reduced from 40
         const EMBED_DIM = 32;
-        const LSTM_UNITS = 128;
+        const LSTM_UNITS = 64;    // Reduced from 128
         const BATCH_SIZE = 64;
-        const EPOCHS = 5; // Reduced to 5 for faster initial load
+        const EPOCHS = 3;         // Reduced from 5
+        const MAX_CHARS = 10000;  // Reduced from 50000
 
         // --- Global State ---
         let corpus = "";
@@ -261,19 +227,15 @@
             if (tabId === 'dashboard') setTimeout(drawLossChart, 50);
         }
 
-        // --- Data Loading with Progress ---
+        // --- Data Loading ---
         async function loadDataset(name) {
-            updateProgress(0, `Fetching ${name} dataset...`);
+            updateProgress(0, `Fetching ${name}...`);
             corpusSelect.disabled = true;
             trainBtn.disabled = true;
             
-            let url = "";
-            if (name === 'shakespeare') {
-                url = 'https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt';
-            } else if (name === 'nietzsche') {
-                // Use a raw GitHub file for Nietzsche text
-                url = 'https://raw.githubusercontent.com/01walid/nietzsche-corpus/master/nietzsche.txt';
-            }
+            let url = name === 'shakespeare' 
+                ? 'https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt'
+                : 'https://raw.githubusercontent.com/01walid/nietzsche-corpus/master/nietzsche.txt';
 
             try {
                 const response = await fetch(url);
@@ -281,7 +243,6 @@
                 
                 const reader = response.body.getReader();
                 const contentLength = +response.headers.get('Content-Length') || 0;
-                
                 let receivedLength = 0;
                 let chunks = [];
                 
@@ -290,32 +251,21 @@
                     if (done) break;
                     chunks.push(value);
                     receivedLength += value.length;
-                    
-                    if (contentLength > 0) {
-                        const percent = (receivedLength / contentLength) * 100;
-                        updateProgress(percent, `Downloading ${name}...`);
-                    } else {
-                        updateProgress(50, `Downloading ${name}...`);
-                    }
+                    if (contentLength > 0) updateProgress((receivedLength / contentLength) * 100, `Downloading...`);
                 }
 
-                // Combine chunks
                 const chunksAll = new Uint8Array(receivedLength);
                 let position = 0;
-                for(let chunk of chunks) {
-                    chunksAll.set(chunk, position);
-                    position += chunk.length;
-                }
+                for(let chunk of chunks) { chunksAll.set(chunk, position); position += chunk.length; }
                 corpus = new TextDecoder("utf-8").decode(chunksAll);
 
-                // Limit corpus size for browser performance
-                if (corpus.length > 50000) corpus = corpus.slice(0, 50000);
-                datasetSizeEl.innerText = corpus.length.toLocaleString();
+                // HEAVY OPTIMIZATION: Limit to 10,000 chars for low RAM
+                if (corpus.length > MAX_CHARS) corpus = corpus.slice(0, MAX_CHARS);
                 
+                datasetSizeEl.innerText = corpus.length.toLocaleString();
                 updateProgress(100, "Dataset loaded. Preparing...");
                 buildVocab();
                 
-                // Small delay to let UI update
                 await new Promise(r => setTimeout(r, 100));
                 trainBtn.disabled = false;
                 trainBtn.innerText = "TRAIN MODEL";
@@ -323,7 +273,7 @@
             } catch (e) {
                 console.error(e);
                 updateProgress(0, "Failed to load dataset.");
-                alert("Failed to load dataset. Check your internet connection.");
+                alert("Failed to load dataset. Check your connection.");
             }
         }
 
@@ -337,23 +287,10 @@
         // --- Model Definition ---
         function createModel() {
             const model = tf.sequential();
-            model.add(tf.layers.embedding({
-                inputDim: vocabSize,
-                outputDim: EMBED_DIM,
-                inputLength: SEQ_LEN
-            }));
-            model.add(tf.layers.lstm({
-                units: LSTM_UNITS,
-                returnSequences: false
-            }));
-            model.add(tf.layers.dense({
-                units: vocabSize,
-                activation: 'softmax'
-            }));
-            model.compile({
-                optimizer: tf.train.adam(0.01),
-                loss: 'categoricalCrossentropy'
-            });
+            model.add(tf.layers.embedding({ inputDim: vocabSize, outputDim: EMBED_DIM, inputLength: SEQ_LEN }));
+            model.add(tf.layers.lstm({ units: LSTM_UNITS, returnSequences: false }));
+            model.add(tf.layers.dense({ units: vocabSize, activation: 'softmax' }));
+            model.compile({ optimizer: tf.train.adam(0.01), loss: 'categoricalCrossentropy' });
             return model;
         }
 
@@ -361,6 +298,8 @@
         async function trainModel(additionalText = "") {
             if (additionalText) {
                 corpus += " " + additionalText;
+                // Trim if user adds too much
+                if (corpus.length > MAX_CHARS + 2000) corpus = corpus.slice(-MAX_CHARS);
                 datasetSizeEl.innerText = corpus.length.toLocaleString();
             }
             buildVocab();
@@ -370,36 +309,35 @@
             exportBtn.disabled = true;
             corpusSelect.disabled = true;
 
-            updateProgress(0, "Preparing sequences...");
-            await new Promise(r => setTimeout(r, 50)); // Yield to UI
+            updateProgress(0, "Preparing sequences (using TypedArrays to save RAM)...");
+            await tf.nextFrame(); // Allow UI to update
 
             const indices = Array.from(corpus).map(c => charToIdx[c]);
-            const inputs = [];
-            const labels = [];
+            const numSequences = indices.length - SEQ_LEN;
             
-            for (let i = 0; i < indices.length - SEQ_LEN; i++) {
-                inputs.push(indices.slice(i, i + SEQ_LEN));
-                labels.push(indices[i + SEQ_LEN]);
-            }
-
-            if (inputs.length === 0) {
-                alert("Corpus is too short to create training sequences.");
-                trainBtn.disabled = false;
-                return;
+            // MEMORY OPTIMIZATION: Use flat TypedArrays instead of nested JS arrays
+            const xData = new Int32Array(numSequences * SEQ_LEN);
+            const yData = new Int32Array(numSequences);
+            
+            let ptr = 0;
+            for (let i = 0; i < numSequences; i++) {
+                for (let j = 0; j < SEQ_LEN; j++) {
+                    xData[ptr++] = indices[i + j];
+                }
+                yData[i] = indices[i + SEQ_LEN];
             }
 
             updateProgress(10, "Creating tensors...");
-            await new Promise(r => setTimeout(r, 50));
+            await tf.nextFrame();
 
-            const xs = tf.tensor2d(inputs, [inputs.length, SEQ_LEN]);
-            const ys = tf.oneHot(tf.tensor1d(labels, 'int32'), vocabSize);
+            const xs = tf.tensor2d(xData, [numSequences, SEQ_LEN], 'int32');
+            const ys = tf.oneHot(tf.tensor1d(yData, 'int32'), vocabSize);
 
             if (!model || model.input.shape[1] !== SEQ_LEN || model.output.shape[1] !== vocabSize) {
                 model = createModel();
             }
 
             lossHistory = [];
-            
             updateProgress(20, "Training neural network...");
             
             await model.fit(xs, ys, {
@@ -407,15 +345,17 @@
                 batchSize: BATCH_SIZE,
                 shuffle: true,
                 callbacks: {
-                    onEpochEnd: (epoch, logs) => {
+                    onEpochEnd: async (epoch, logs) => {
                         lossHistory.push(logs.loss);
                         lossValEl.innerText = logs.loss.toFixed(4);
                         epochValEl.innerText = `${epoch + 1}/${EPOCHS}`;
                         
-                        // Calculate progress from 20% to 100% based on epoch
                         const trainPercent = 20 + ((epoch + 1) / EPOCHS) * 80;
                         updateProgress(trainPercent, `Training Epoch ${epoch + 1}/${EPOCHS}...`);
                         drawLossChart();
+                        
+                        // Yield to the browser so it doesn't freeze
+                        await tf.nextFrame();
                     }
                 }
             });
@@ -445,37 +385,36 @@
             const seed = currentStream.slice(-SEQ_LEN);
             const seedIndices = seed.split('').map(c => charToIdx[c] || 0);
             
-            const inputTensor = tf.tensor2d([seedIndices], [1, SEQ_LEN]);
-            const prediction = model.predict(inputTensor);
-            const probs = await prediction.data();
+            // tf.tidy is crucial here to prevent memory leaks in the generation loop
+            const { nextChar, nextIdx } = tf.tidy(() => {
+                const inputTensor = tf.tensor2d([seedIndices], [1, SEQ_LEN], 'int32');
+                const prediction = model.predict(inputTensor);
+                const probs = prediction.dataSync(); // Use sync for speed in this tight loop
 
-            // Apply temperature
-            const temp = parseFloat(tempSlider.value);
-            const logits = Array.from(probs).map(p => Math.log(p + 1e-10) / temp);
-            const maxLogit = Math.max(...logits);
-            const exps = logits.map(l => Math.exp(l - maxLogit));
-            const sumExps = exps.reduce((a, b) => a + b, 0);
-            const scaledProbs = exps.map(e => e / sumExps);
+                const temp = parseFloat(tempSlider.value);
+                const logits = Array.from(probs).map(p => Math.log(p + 1e-10) / temp);
+                const maxLogit = Math.max(...logits);
+                const exps = logits.map(l => Math.exp(l - maxLogit));
+                const sumExps = exps.reduce((a, b) => a + b, 0);
+                const scaledProbs = exps.map(e => e / sumExps);
 
-            // Sample
-            const rand = Math.random();
-            let cumulative = 0;
-            let nextIdx = 0;
-            for (let i = 0; i < scaledProbs.length; i++) {
-                cumulative += scaledProbs[i];
-                if (rand < cumulative) { nextIdx = i; break; }
-            }
+                const rand = Math.random();
+                let cumulative = 0;
+                let chosenIdx = 0;
+                for (let i = 0; i < scaledProbs.length; i++) {
+                    cumulative += scaledProbs[i];
+                    if (rand < cumulative) { chosenIdx = i; break; }
+                }
 
-            const nextChar = idxToChar[nextIdx];
+                return { nextChar: idxToChar[chosenIdx], nextIdx: chosenIdx };
+            });
+
             currentStream += nextChar;
             lastChar = nextChar;
 
             if (currentStream.length > 150) currentStream = currentStream.slice(-150);
             streamEl.innerText = currentStream;
             contextEl.innerText = `"${lastChar}"`;
-
-            inputTensor.dispose();
-            prediction.dispose();
         }
 
         // --- Loss Chart ---
@@ -508,6 +447,8 @@
         async function teachAI() {
             const newText = document.getElementById('teach-input').value.trim();
             if (!newText) return alert("Please enter some text.");
+            if (newText.length > 500) return alert("Please enter less than 500 characters at a time to prevent RAM crashes.");
+            
             await trainModel(newText);
             document.getElementById('teach-input').value = '';
         }
@@ -554,7 +495,6 @@
         tempSlider.addEventListener('input', (e) => tempValEl.innerText = parseFloat(e.target.value).toFixed(2));
         corpusSelect.addEventListener('change', async (e) => {
             await loadDataset(e.target.value);
-            // Don't auto-train on change to let user press the button
         });
         trainBtn.addEventListener('click', () => trainModel());
         window.addEventListener('resize', drawLossChart);
