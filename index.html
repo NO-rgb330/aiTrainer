@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Trainer - WebGPU Bigram</title>
+    <!-- Load VT323 Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    
+    <!-- Load TensorFlow.js and WebGPU Backend -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu@4.20.0/dist/tf-backend-webgpu.min.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #000000;
+            --text-color: #ffffff;
+            --border-color: #444444;
+            --muted-color: #888888;
+        }
+
+        * {
+            box-sizing: border-box;
+            font-family: 'VT323', monospace;
+            user-select: none;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        /* Top Header */
+        .header {
+            border: 1px solid var(--border-color);
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 24px;
+        }
+
+        .stream-text {
+            display: flex;
+            align-items: center;
+        }
+
+        .cursor {
+            display: inline-block;
+            width: 12px;
+            height: 22px;
+            background-color: var(--text-color);
+            margin-left: 5px;
+            animation: blink 1s step-end infinite;
+        }
+
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+
+        .btn {
+            background: transparent;
+            color: var(--text-color);
+            border: 1px solid var(--text-color);
+            font-size: 20px;
+            padding: 2px 15px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: var(--text-color);
+            color: var(--bg-color);
+        }
+
+        /* Main Dashboard */
+        .dashboard {
+            display: flex;
+            gap: 15px;
+        }
+
+        .panel {
+            flex: 1;
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel h2 {
+            margin: 0 0 15px 0;
+            font-size: 20px;
+            font-weight: normal;
+            color: var(--muted-color);
+            text-align: center;
+        }
+
+        canvas {
+            width: 100%;
+            height: 350px;
+            display: block;
+        }
+
+        /* Info Bar */
+        .info-bar {
+            display: flex;
+            border: 1px solid var(--border-color);
+            text-align: center;
+        }
+
+        .info-item {
+            flex: 1;
+            padding: 15px;
+            border-right: 1px solid var(--border-color);
+        }
+
+        .info-item:last-child {
+            border-right: none;
+        }
+
+        .info-label {
+            display: block;
+            font-size: 16px;
+            color: var(--muted-color);
+            margin-bottom: 5px;
+        }
+
+        .info-value {
+            font-size: 32px;
+        }
+
+        /* Controls */
+        .controls {
+            display: flex;
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 20px;
+        }
+
+        select, input[type="range"] {
+            background: var(--bg-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            font-family: 'VT323', monospace;
+            font-size: 20px;
+            padding: 5px;
+            outline: none;
+        }
+
+        select {
+            width: 200px;
+        }
+
+        input[type="range"] {
+            width: 150px;
+            accent-color: var(--text-color);
+        }
+
+        #status {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            font-size: 16px;
+            color: var(--muted-color);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div>
+                <span style="color: var(--muted-color);">STREAM:</span>
+                <span id="stream-text" class="stream-text"></span>
+                <span class="cursor"></span>
+            </div>
+            <button id="pause-btn" class="btn">PAUSE</button>
+        </div>
+
+        <!-- Dashboard -->
+        <div class="dashboard">
+            <div class="panel">
+                <h2>BIGRAM TRANSITION MATRIX</h2>
+                <canvas id="matrix-canvas"></canvas>
+            </div>
+            <div class="panel">
+                <h2>CURRENT TOKEN PROBABILITY</h2>
+                <canvas id="prob-canvas"></canvas>
+            </div>
+        </div>
+
+        <!-- Info Bar -->
+        <div class="info-bar">
+            <div class="info-item">
+                <span class="info-label">CURRENT CONTEXT</span>
+                <span id="context-val" class="info-value">-</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">TRANSITION PROB</span>
+                <span id="prob-val" class="info-value">-</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">CONTEXT ENTROPY</span>
+                <span id="entropy-val" class="info-value">-</span>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <div class="control-group">
+                <label>TRAINING CORPUS</label>
+                <select id="corpus-select">
+                    <option value="chaos">Alternating Chaos</option>
+                    <option value="shakespeare">Shakespeare</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>TEMPERATURE</label>
+                <input type="range" id="temp-slider" min="0.1" max="2.0" step="0.01" value="1.00">
+                <span id="temp-val" style="width: 40px; text-align: right;">1.00</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="status">Initializing WebGPU...</div>
+
+    <script>
+        // --- Text Corpora ---
+        const CORPORA = {
+            chaos: "ecor col wlde ralde wacw ecor col wlde ralde wacw ecor col wlde ralde wacw",
+            shakespeare: "to be or not to be that is the question whether tis nobler in the mind to suffer the slings and arrows of outrageous fortune"
+        };
+
+        // --- Global State ---
+        let vocab = [];
+        let charToIdx = {};
+        let idxToChar = {};
+        let vocabSize = 0;
+        let probMatrix = [];
+        
+        let isPaused = false;
+        let currentStream = "";
+        let lastChar = "";
+        
+        // Canvas Contexts
+        const matrixCanvas = document.getElementById('matrix-canvas');
+        const matrixCtx = matrixCanvas.getContext('2d');
+        const probCanvas = document.getElementById('prob-canvas');
+        const probCtx = probCanvas.getContext('2d');
+
+        // UI Elements
+        const statusEl = document.getElementById('status');
+        const streamEl = document.getElementById('stream-text');
+        const contextEl = document.getElementById('context-val');
+        const probValEl = document.getElementById('prob-val');
+        const entropyEl = document.getElementById('entropy-val');
+        const pauseBtn = document.getElementById('pause-btn');
+        const tempSlider = document.getElementById('temp-slider');
+        const tempValEl = document.getElementById('temp-val');
+        const corpusSelect = document.getElementById('corpus-select');
+
+        // --- Tokenizer ---
+        function tokenize(text) {
+            vocab = Array.from(new Set(text)).sort();
+            charToIdx = {};
+            idxToChar = {};
+            vocab.forEach((char, i) => {
+                charToIdx[char] = i;
+                idxToChar[i] = char;
+            });
+            vocabSize = vocab.length;
+        }
+
+        // --- GPU Matrix Computation (TensorFlow.js) ---
+        async function computeMatrix(text) {
+            statusEl.innerText = "Initializing WebGPU backend...";
+            try {
+                // Set WebGPU backend
+                await tf.setBackend('webgpu');
+                await tf.ready();
+                statusEl.innerText = `Backend: ${tf.getBackend().toUpperCase()} | Computing...`;
+
+                tokenize(text);
+                const indices = Array.from(text).map(c => charToIdx[c]);
+
+                const result = tf.tidy(() => {
+                    const t = tf.tensor1d(indices, 'int32');
+                    const currentTokens = t.slice(0, -1);
+                    const nextTokens = t.slice(1);
+                    
+                    // One-hot encode on GPU
+                    const ohCurrent = tf.oneHot(currentTokens, vocabSize).toFloat();
+                    const ohNext = tf.oneHot(nextTokens, vocabSize).toFloat();
+                    
+                    // Matrix Multiplication on GPU
+                    const counts = tf.matMul(ohCurrent.transpose(), ohNext);
+                    
+                    // Normalize to probabilities
+                    const sums = counts.sum(1).expandDims(1).add(1e-10);
+                    return counts.div(sums).arraySync();
+                });
+
+                probMatrix = result;
+                statusEl.innerText = `Backend: ${tf.getBackend().toUpperCase()} | Ready`;
+            } catch (e) {
+                statusEl.innerText = "WebGPU not supported. Falling back to CPU/WebGL.";
+                console.error(e);
+                // Fallback to WebGL if WebGPU fails
+                await tf.setBackend('webgl');
+                await computeMatrixFallback(text);
+            }
+        }
+
+        // Fallback if WebGPU fails
+        async function computeMatrixFallback(text) {
+            tokenize(text);
+            const indices = Array.from(text).map(c => charToIdx[c]);
+            const result = tf.tidy(() => {
+                const t = tf.tensor1d(indices, 'int32');
+                const ohCurrent = tf.oneHot(t.slice(0, -1), vocabSize).toFloat();
+                const ohNext = tf.oneHot(t.slice(1), vocabSize).toFloat();
+                const counts = tf.matMul(ohCurrent.transpose(), ohNext);
+                const sums = counts.sum(1).expandDims(1).add(1e-10);
+                return counts.div(sums).arraySync();
+            });
+            probMatrix = result;
+            statusEl.innerText = `Backend: ${tf.getBackend().toUpperCase()} | Ready`;
+        }
+
+        // --- Canvas Drawing ---
+        function drawDashboard() {
+            if (!probMatrix.length) return;
+
+            // Match canvas resolution to CSS size
+            const rect = matrixCanvas.getBoundingClientRect();
+            matrixCanvas.width = rect.width;
+            matrixCanvas.height = rect.height;
+            probCanvas.width = rect.width;
+            probCanvas.height = rect.height;
+
+            const currentIdx = charToIdx[lastChar] || 0;
+            const probs = probMatrix[currentIdx];
+
+            // 1. Draw Heatmap
+            matrixCtx.clearRect(0, 0, matrixCanvas.width, matrixCanvas.height);
+            const cellW = matrixCanvas.width / vocabSize;
+            const cellH = matrixCanvas.height / vocabSize;
+
+            for (let i = 0; i < vocabSize; i++) {
+                for (let j = 0; j < vocabSize; j++) {
+                    const prob = probMatrix[i][j];
+                    // Black and white heatmap (intensity based on prob)
+                    const intensity = Math.min(prob * 255 * 3, 255);
+                    matrixCtx.fillStyle = `rgb(${intensity}, ${intensity}, ${intensity})`;
+                    matrixCtx.fillRect(j * cellW, i * cellH, cellW, cellH);
+                }
+            }
+
+            // Highlight current row
+            matrixCtx.strokeStyle = '#ffffff';
+            matrixCtx.lineWidth = 2;
+            matrixCtx.setLineDash([5, 5]);
+            matrixCtx.strokeRect(0, currentIdx * cellH, matrixCanvas.width, cellH);
+            matrixCtx.setLineDash([]);
+
+            // 2. Draw Bar Chart
+            probCtx.clearRect(0, 0, probCanvas.width, probCanvas.height);
+            const barW = probCanvas.width / vocabSize;
+            
+            let maxProb = 0;
+            let maxIdx = 0;
+
+            for (let i = 0; i < vocabSize; i++) {
+                const p = probs[i];
+                if (p > maxProb) { maxProb = p; maxIdx = i; }
+
+                // Draw bar
+                const barH = p * probCanvas.height * 2.5; // Scale for visibility
+                const x = i * barW;
+                const y = probCanvas.height - barH;
+
+                // Highlight max probability in white, others in gray
+                probCtx.fillStyle = (i === maxIdx) ? '#ffffff' : '#555555';
+                probCtx.fillRect(x + 2, y, barW - 4, barH);
+            }
+
+            // Update UI Info
+            const entropy = calculateEntropy(probs);
+            contextEl.innerText = `"${lastChar}"`;
+            probValEl.innerText = `${(maxProb * 100).toFixed(1)}%`;
+            entropyEl.innerText = `${entropy.toFixed(2)} bits`;
+        }
+
+        function calculateEntropy(probs) {
+            let ent = 0;
+            for (let p of probs) {
+                if (p > 0) ent -= p * Math.log2(p);
+            }
+            return ent;
+        }
+
+        // --- Generation Logic ---
+        function sampleNextChar(probs, temperature) {
+            // Apply temperature
+            const logits = probs.map(p => Math.log(p + 1e-10) / temperature);
+            const maxLogit = Math.max(...logits);
+            const exps = logits.map(l => Math.exp(l - maxLogit));
+            const sumExps = exps.reduce((a, b) => a + b, 0);
+            const scaledProbs = exps.map(e => e / sumExps);
+
+            // Sample
+            const rand = Math.random();
+            let cumulative = 0;
+            for (let i = 0; i < scaledProbs.length; i++) {
+                cumulative += scaledProbs[i];
+                if (rand < cumulative) return idxToChar[i];
+            }
+            return idxToChar[scaledProbs.length - 1];
+        }
+
+        function generateStep() {
+            if (isPaused || !probMatrix.length) return;
+
+            const currentIdx = charToIdx[lastChar];
+            if (currentIdx === undefined) return;
+
+            const probs = probMatrix[currentIdx];
+            const temp = parseFloat(tempSlider.value);
+            
+            // Predict next char
+            const nextChar = sampleNextChar(probs, temp);
+            
+            // Update state
+            currentStream += nextChar;
+            lastChar = nextChar;
+            streamEl.innerText = currentStream;
+
+            // Keep stream manageable
+            if (currentStream.length > 50) {
+                currentStream = currentStream.slice(-50);
+            }
+
+            // Draw
+            drawDashboard();
+        }
+
+        // --- Initialization ---
+        async function start() {
+            await computeMatrix(CORPORA[corpusSelect.value]);
+            
+            // Set initial state
+            currentStream = CORPORA[corpusSelect.value].slice(0, 15);
+            lastChar = currentStream[currentStream.length - 1];
+            streamEl.innerText = currentStream;
+            
+            drawDashboard();
+            
+            // Start loop
+            setInterval(generateStep, 500);
+        }
+
+        // --- Event Listeners ---
+        pauseBtn.addEventListener('click', () => {
+            isPaused = !isPaused;
+            pauseBtn.innerText = isPaused ? 'PLAY' : 'PAUSE';
+        });
+
+        tempSlider.addEventListener('input', (e) => {
+            tempValEl.innerText = parseFloat(e.target.value).toFixed(2);
+        });
+
+        corpusSelect.addEventListener('change', async (e) => {
+            statusEl.innerText = "Recomputing matrix...";
+            await computeMatrix(CORPORA[e.target.value]);
+            currentStream = CORPORA[e.target.value].slice(0, 15);
+            lastChar = currentStream[currentStream.length - 1];
+            streamEl.innerText = currentStream;
+            drawDashboard();
+        });
+
+        // Handle window resize
+        window.addEventListener('resize', drawDashboard);
+
+        // Start the app
+        start();
+    </script>
+</body>
+</html>
