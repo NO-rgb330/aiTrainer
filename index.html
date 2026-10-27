@@ -378,7 +378,6 @@
             document.getElementById(`tab-${tabId}`).classList.add('active');
             if (btn) btn.classList.add('active');
             
-            // Need a slight delay to allow the DOM to update and the canvas to have dimensions
             if (tabId === 'dashboard') {
                 setTimeout(drawDashboard, 50);
             }
@@ -408,10 +407,9 @@
                         return;
                     }
                 }
-                // Fallback to WebGL
                 statusEl.innerText = "Falling back to WebGL...";
                 await tf.setBackend('webgl');
-                await tf.ready(); // ESSENTIAL FIX: Wait for WebGL to fully initialize
+                await tf.ready();
                 statusEl.innerText = `Backend: WEBGL | Ready`;
             } catch (e) {
                 statusEl.innerText = `Backend Error: ${e.message}`;
@@ -428,9 +426,9 @@
                 if (indices.length < 2) throw new Error("Corpus too short to train.");
 
                 const result = tf.tidy(() => {
-                    const t = tf.tensor1d(indices, 'int32');
-                    const currentTokens = t.slice(0, -1);
-                    const nextTokens = t.slice(1);
+                    // FIX: Use standard JS array slice to avoid TF.js negative slice bugs
+                    const currentTokens = tf.tensor1d(indices.slice(0, -1), 'int32');
+                    const nextTokens = tf.tensor1d(indices.slice(1), 'int32');
                     
                     const ohCurrent = tf.oneHot(currentTokens, vocabSize).toFloat();
                     const ohNext = tf.oneHot(nextTokens, vocabSize).toFloat();
@@ -452,9 +450,8 @@
         function drawDashboard() {
             if (!probMatrix.length) return;
 
-            // Fix canvas sizing to perfectly match the CSS container
             const rect = matrixCanvas.getBoundingClientRect();
-            if (rect.width === 0) return; // Prevent drawing if tab is hidden
+            if (rect.width === 0) return;
             
             matrixCanvas.width = rect.width;
             matrixCanvas.height = rect.height;
@@ -578,8 +575,8 @@
             const newText = document.getElementById('teach-input').value.trim();
             if (!newText) return alert("Please enter some text to train on.");
             
-            fullCorpus += " " + newText; // Append to corpus
-            await computeMatrix(); // Recompute on GPU
+            fullCorpus += " " + newText; 
+            await computeMatrix(); 
             
             document.getElementById('teach-input').value = '';
             alert("AI has learned the new text! Check the dashboard.");
@@ -614,7 +611,6 @@
                     vocab = data.vocab;
                     probMatrix = data.probMatrix;
                     
-                    // Rebuild tokenizer maps
                     charToIdx = {};
                     idxToChar = {};
                     vocab.forEach((char, i) => {
@@ -623,7 +619,6 @@
                     });
                     vocabSize = vocab.length;
 
-                    // Reset stream
                     currentStream = fullCorpus.slice(0, 15);
                     lastChar = currentStream[currentStream.length - 1];
                     streamEl.innerText = currentStream;
